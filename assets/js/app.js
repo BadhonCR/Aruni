@@ -189,6 +189,7 @@
   const membersPage = $("#membersPage");
   if (membersPage) {
     const statusBox = $("#membersStatus"), form = $("#memberForm"), tbody = $("#membersTableBody"), saveButton = $("#saveMemberButton");
+    $("#signOutButton").addEventListener("click", async () => { const {error}=await db.auth.signOut(); if(error) notify("লগআউট করা যায়নি: "+error.message,"danger"); else window.location.replace("login.html"); });
     let editingId = null, cachedMembers = [];
     const notify = (message, type = "info") => { statusBox.className = "alert alert-" + type; statusBox.textContent = message; statusBox.hidden = false; };
     const renderMembers = (items) => {
