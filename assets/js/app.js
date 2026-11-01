@@ -185,4 +185,46 @@
       if (event === "SIGNED_OUT" || !session) window.location.replace("login.html");
     });
   }
+
+  const membersPage = $("#membersPage");
+  if (membersPage) {
+    const statusBox = $("#membersStatus"), form = $("#memberForm"), tbody = $("#membersTableBody"), saveButton = $("#saveMemberButton");
+    let editingId = null, cachedMembers = [];
+    const notify = (message, type = "info") => { statusBox.className = "alert alert-" + type; statusBox.textContent = message; statusBox.hidden = false; };
+    const renderMembers = (items) => {
+      tbody.replaceChildren();
+      if (!items.length) { const row=document.createElement("tr"),cell=document.createElement("td");cell.colSpan=7;cell.className="text-center text-muted py-4";cell.textContent="কোনো সদস্য পাওয়া যায়নি।";row.append(cell);tbody.append(row);return; }
+      items.forEach((m) => {
+        const row=document.createElement("tr");
+        [m.member_code||"—",m.full_name,m.phone||"—",m.room_no||"—",({active:"সক্রিয়",former:"সাবেক",suspended:"স্থগিত"})[m.status]||m.status,m.joining_date||"—"].forEach(v=>{const td=document.createElement("td");td.textContent=v;row.append(td);});
+        const td=document.createElement("td"),btn=document.createElement("button");btn.type="button";btn.className="btn btn-sm btn-outline-success";btn.textContent="সম্পাদনা";btn.addEventListener("click",()=>startEdit(m));td.append(btn);row.append(td);tbody.append(row);
+      });
+    };
+    const loadMembers = async () => {
+      const {data,error}=await db.from("members").select("id,member_code,full_name,phone,email,room_no,joining_date,leaving_date,status,notes,user_id").order("full_name",{ascending:true});
+      if(error){notify("সদস্য তালিকা লোড করা যায়নি: "+error.message,"danger");return;}
+      cachedMembers=data||[];renderMembers(cachedMembers);$("#memberCountLabel").textContent="মোট "+cachedMembers.length+" জন সদস্য";
+    };
+    const resetForm = () => { editingId=null;form.reset();$("#memberFormTitle").textContent="নতুন সদস্য যোগ করুন";saveButton.textContent="সদস্য সংরক্ষণ"; };
+    const startEdit = (m) => { editingId=m.id;["member_code","full_name","phone","email","room_no","joining_date","leaving_date","status","notes"].forEach(k=>{const el=form.elements.namedItem(k);if(el)el.value=m[k]||(k==="status"?"active":"");});$("#memberFormTitle").textContent="সদস্যের তথ্য সম্পাদনা";saveButton.textContent="পরিবর্তন সংরক্ষণ";window.scrollTo({top:0,behavior:"smooth"}); };
+    form.addEventListener("submit",async(e)=>{
+      e.preventDefault();const v=Object.fromEntries(new FormData(form).entries());
+      const payload={member_code:v.member_code.trim()||null,full_name:v.full_name.trim(),phone:v.phone.trim()||null,email:v.email.trim()||null,room_no:v.room_no.trim()||null,joining_date:v.joining_date||null,leaving_date:v.leaving_date||null,status:v.status,notes:v.notes.trim()||null};
+      if(!payload.full_name){notify("সদস্যের নাম লিখুন।","warning");return;}
+      saveButton.disabled=true;
+      const result=editingId?await db.from("members").update(payload).eq("id",editingId):await db.from("members").insert(payload);
+      saveButton.disabled=false;
+      if(result.error){notify("সংরক্ষণ করা যায়নি: "+result.error.message,"danger");return;}
+      notify(editingId?"সদস্যের তথ্য আপডেট হয়েছে।":"নতুন সদস্য যোগ হয়েছে।","success");resetForm();await loadMembers();
+    });
+    $("#cancelMemberEdit").addEventListener("click",resetForm);
+    $("#memberSearch").addEventListener("input",e=>{const q=e.target.value.trim().toLocaleLowerCase();renderMembers(cachedMembers.filter(m=>[m.full_name,m.member_code,m.phone,m.room_no,m.status].some(v=>String(v||"").toLocaleLowerCase().includes(q))));});
+    (async()=>{
+      const {data:s}=await db.auth.getSession();if(!s.session){window.location.replace("login.html");return;}
+      const {data:p,error}=await db.from("profiles").select("role,is_active").eq("id",s.session.user.id).maybeSingle();
+      if(error||!p||!p.is_active||!["admin","manager"].includes(p.role)){notify("এই পৃষ্ঠাটি শুধু Admin ও Manager ব্যবহার করতে পারবেন।","danger");setTimeout(()=>window.location.replace("dashboard.html"),1800);return;}
+      await loadMembers();
+    })().catch(e=>notify("সমস্যা হয়েছে: "+e.message,"danger"));
+  }
+
 })();
