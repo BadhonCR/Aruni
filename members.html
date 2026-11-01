@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="bn"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#123c35"><title>Member Management | Aruni Chatrabas</title>
+<link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="assets/css/style.css"></head>
+<body><main class="container py-4 py-md-5" id="membersPage">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-3"><a class="navbar-brand d-inline-flex align-items-center gap-2" href="index.html"><span class="brand-mark">A</span><span><strong>ARUNI</strong><small>CHATRABAS</small></span></a><div class="d-flex gap-2"><a href="dashboard.html" class="btn btn-outline-custom">ড্যাশবোর্ড</a><button id="signOutButton" class="btn btn-outline-danger">লগআউট</button></div></div>
+<div class="mt-4"><span class="section-kicker">ADMINISTRATION · MEMBERS</span><h1 class="dashboard-title mt-2">সদস্য ব্যবস্থাপনা</h1><p class="text-muted">বর্তমান ও সাবেক সদস্যদের তথ্য সংরক্ষণ ও হালনাগাদ করুন।</p></div>
+<div id="membersStatus" class="alert alert-info" role="status" aria-live="polite" hidden></div>
+<div class="dashboard-panel mb-4"><h2 id="memberFormTitle" class="h5 mb-3">নতুন সদস্য যোগ করুন</h2><form id="memberForm"><div class="row g-3">
+<div class="col-md-4"><label class="form-label" for="member_code">সদস্য আইডি / কোড</label><input class="form-control" id="member_code" name="member_code" maxlength="40"></div>
+<div class="col-md-8"><label class="form-label" for="full_name">পূর্ণ নাম *</label><input class="form-control" id="full_name" name="full_name" required maxlength="150"></div>
+<div class="col-md-4"><label class="form-label" for="phone">মোবাইল</label><input class="form-control" id="phone" name="phone" type="tel" maxlength="30"></div>
+<div class="col-md-4"><label class="form-label" for="email">ইমেইল</label><input class="form-control" id="email" name="email" type="email" maxlength="254"></div>
+<div class="col-md-4"><label class="form-label" for="room_no">রুম নম্বর</label><input class="form-control" id="room_no" name="room_no" maxlength="30"></div>
+<div class="col-md-4"><label class="form-label" for="joining_date">যোগদানের তারিখ</label><input class="form-control" id="joining_date" name="joining_date" type="date"></div>
+<div class="col-md-4"><label class="form-label" for="leaving_date">ছাড়ার তারিখ</label><input class="form-control" id="leaving_date" name="leaving_date" type="date"></div>
+<div class="col-md-4"><label class="form-label" for="status">অবস্থা</label><select class="form-select" id="status" name="status"><option value="active">সক্রিয়</option><option value="former">সাবেক</option><option value="suspended">স্থগিত</option></select></div>
+<div class="col-12"><label class="form-label" for="notes">অতিরিক্ত তথ্য</label><textarea class="form-control" id="notes" name="notes" rows="2" maxlength="2000"></textarea></div>
+</div><div class="d-flex flex-wrap gap-2 mt-3"><button id="saveMemberButton" class="btn btn-primary-custom" type="submit">সদস্য সংরক্ষণ</button><button id="cancelMemberEdit" class="btn btn-outline-secondary" type="reset">ফর্ম পরিষ্কার</button></div></form></div>
+<div class="dashboard-panel"><div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><h2 class="h5 mb-0">সদস্য তালিকা</h2><span id="memberCountLabel" class="small text-muted">লোড হচ্ছে…</span></div><input id="memberSearch" class="form-control mb-3" type="search" placeholder="নাম, আইডি, মোবাইল বা রুম দিয়ে খুঁজুন…">
+<div class="table-responsive"><table class="table align-middle"><thead><tr><th>আইডি</th><th>নাম</th><th>মোবাইল</th><th>রুম</th><th>অবস্থা</th><th>যোগদান</th><th>কাজ</th></tr></thead><tbody id="membersTableBody"><tr><td colspan="7" class="text-center">তথ্য লোড হচ্ছে…</td></tr></tbody></table></div></div>
+<p class="small text-muted mt-3">নোট: এই পৃষ্ঠা সদস্যের রেকর্ড পরিচালনা করে; Supabase Auth অ্যাকাউন্ট তৈরি বা আমন্ত্রণ করে না।</p>
+</main><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="assets/js/supabase-config.js"></script><script src="assets/js/app.js"></script></body></html>
