@@ -228,4 +228,73 @@
     })().catch(e=>notify("সমস্যা হয়েছে: "+e.message,"danger"));
   }
 
+
+  const accountsPage = $("#accountsPage");
+  if (accountsPage) {
+    const statusBox=$("#accountsStatus"), monthInput=$("#accountMonth"), memberSelect=$("#depositMember");
+    const depositForm=$("#depositForm"), expenseForm=$("#expenseForm");
+    const money=v=>new Intl.NumberFormat("en-BD",{style:"currency",currency:"BDT",maximumFractionDigits:2}).format(Number(v||0));
+    const notify=(message,type="info")=>{statusBox.className="alert alert-"+type;statusBox.textContent=message;statusBox.hidden=false;};
+    const monthBounds=()=>{const value=monthInput.value;if(!value)return null;const [y,m]=value.split("-").map(Number);return {start:value+"-01",next:new Date(y,m,1).toISOString().slice(0,10)};};
+    let currentMonthId=null, members=[];
+    const ensureMonth=async()=>{
+      const bounds=monthBounds();if(!bounds)throw new Error("প্রথমে মাস নির্বাচন করুন।");
+      const {data:found,error}=await db.from("mess_months").select("id,status").eq("month_start",bounds.start).maybeSingle();
+      if(error)throw error;
+      if(found){currentMonthId=found.id;if(found.status!=="open")throw new Error("এই মাসের হিসাব বন্ধ করা হয়েছে।");return found.id;}
+      const {data:created,error:createError}=await db.from("mess_months").insert({month_start:bounds.start,status:"open"}).select("id,status").single();
+      if(createError)throw createError;currentMonthId=created.id;return created.id;
+    };
+    const loadMembersForSelect=async()=>{
+      const {data,error}=await db.from("members").select("id,full_name,member_code").eq("status","active").order("full_name");
+      if(error)throw error;members=data||[];
+      memberSelect.replaceChildren();const placeholder=document.createElement("option");placeholder.value="";placeholder.textContent="সদস্য নির্বাচন করুন";memberSelect.append(placeholder);
+      members.forEach(m=>{const o=document.createElement("option");o.value=m.id;o.textContent=(m.member_code?m.member_code+" — ":"")+m.full_name;memberSelect.append(o);});
+    };
+    const loadLedger=async()=>{
+      const bounds=monthBounds();if(!bounds)return;
+      const {data:month,error:monthError}=await db.from("mess_months").select("id,status").eq("month_start",bounds.start).maybeSingle();
+      if(monthError)throw monthError;
+      currentMonthId=month?.id||null;
+      $("#monthState").textContent=month?(month.status==="open"?"চলমান":"বন্ধ"):"এখনো খোলা হয়নি";
+      if(!month){$("#depositRows").textContent="এই মাসে কোনো জমা নেই।";$("#expenseRows").textContent="এই মাসে কোনো খরচ নেই।";$("#depositSum").textContent=money(0);$("#expenseSum").textContent=money(0);return;}
+      const [d,e]=await Promise.all([
+        db.from("deposits").select("*").eq("mess_month_id",month.id).order("paid_on",{ascending:false}),
+        db.from("expenses").select("*").eq("mess_month_id",month.id).order("spent_on",{ascending:false})
+      ]);
+      if(d.error)throw d.error;if(e.error)throw e.error;
+      const memberMap=new Map(members.map(m=>[m.id,m]));
+      const depositRows=$("#depositRows");depositRows.replaceChildren();
+      (d.data||[]).forEach(item=>{const tr=document.createElement("tr"),m=memberMap.get(item.member_id);[item.paid_on,m?.full_name||"সদস্য",item.payment_method,money(item.amount),item.note||""].forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.append(td);});depositRows.append(tr);});
+      if(!d.data?.length)depositRows.textContent="এই মাসে কোনো জমা নেই।";
+      const expenseRows=$("#expenseRows");expenseRows.replaceChildren();
+      (e.data||[]).forEach(item=>{const tr=document.createElement("tr");[item.spent_on,item.title,item.category,money(item.amount),item.note||""].forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.append(td);});expenseRows.append(tr);});
+      if(!e.data?.length)expenseRows.textContent="এই মাসে কোনো খরচ নেই।";
+      $("#depositSum").textContent=money((d.data||[]).reduce((s,x)=>s+Number(x.amount),0));
+      $("#expenseSum").textContent=money((e.data||[]).reduce((s,x)=>s+Number(x.amount),0));
+    };
+    monthInput.addEventListener("change",()=>loadLedger().catch(e=>notify("হিসাব লোড হয়নি: "+e.message,"danger")));
+    depositForm.addEventListener("submit",async ev=>{
+      ev.preventDefault();const v=Object.fromEntries(new FormData(depositForm).entries());
+      try{const monthId=await ensureMonth();const {data:s}=await db.auth.getSession();
+        const {error}=await db.from("deposits").insert({member_id:v.member_id,mess_month_id:monthId,amount:Number(v.amount),paid_on:v.paid_on,payment_method:v.payment_method,reference:v.reference||null,note:v.note||null,recorded_by:s.session.user.id});
+        if(error)throw error;notify("জমার তথ্য সংরক্ষিত হয়েছে।","success");depositForm.reset();await loadLedger();
+      }catch(e){notify("জমা সংরক্ষণ করা যায়নি: "+e.message,"danger");}
+    });
+    expenseForm.addEventListener("submit",async ev=>{
+      ev.preventDefault();const v=Object.fromEntries(new FormData(expenseForm).entries());
+      try{const monthId=await ensureMonth();const {data:s}=await db.auth.getSession();
+        const {error}=await db.from("expenses").insert({mess_month_id:monthId,title:v.title,category:v.category,amount:Number(v.amount),spent_on:v.spent_on,note:v.note||null,recorded_by:s.session.user.id});
+        if(error)throw error;notify("খরচের তথ্য সংরক্ষিত হয়েছে।","success");expenseForm.reset();await loadLedger();
+      }catch(e){notify("খরচ সংরক্ষণ করা যায়নি: "+e.message,"danger");}
+    });
+    (async()=>{
+      const {data:s}=await db.auth.getSession();if(!s.session){window.location.replace("login.html");return;}
+      const {data:p,error}=await db.from("profiles").select("role,is_active").eq("id",s.session.user.id).maybeSingle();
+      if(error||!p||!p.is_active||!["admin","manager"].includes(p.role)){notify("এই পৃষ্ঠা শুধু Admin ও Manager ব্যবহার করতে পারবেন।","danger");setTimeout(()=>window.location.replace("dashboard.html"),1800);return;}
+      const today=new Date();monthInput.value=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0");
+      await loadMembersForSelect();await loadLedger();
+    })().catch(e=>notify("অ্যাকাউন্ট পৃষ্ঠা চালু হয়নি: "+e.message,"danger"));
+  }
+
 })();
