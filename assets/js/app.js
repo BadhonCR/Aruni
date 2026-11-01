@@ -297,4 +297,102 @@
     })().catch(e=>notify("অ্যাকাউন্ট পৃষ্ঠা চালু হয়নি: "+e.message,"danger"));
   }
 
+
+  const mealsPage = $("#mealsPage");
+  if (mealsPage) {
+    const statusBox=$("#mealsStatus"), monthInput=$("#mealMonth"), dateInput=$("#mealDate");
+    const form=$("#dailyMealForm"), memberSelect=$("#mealMember"), saveButton=$("#saveMealButton");
+    const money=v=>new Intl.NumberFormat("en-BD",{style:"currency",currency:"BDT",maximumFractionDigits:2}).format(Number(v||0));
+    const bn=v=>new Intl.NumberFormat("bn-BD",{maximumFractionDigits:1}).format(Number(v||0));
+    const notify=(message,type="info")=>{statusBox.className="alert alert-"+type;statusBox.textContent=message;statusBox.hidden=false;};
+    const bounds=()=>{if(!monthInput.value)return null;const parts=monthInput.value.split("-").map(Number);return {start:monthInput.value+"-01",next:new Date(parts[0],parts[1],1).toISOString().slice(0,10)};};
+    let members=[], monthRecord=null, dailyEntries=[];
+    const ensureMonth=async()=>{
+      const b=bounds();if(!b)throw new Error("প্রথমে হিসাবের মাস নির্বাচন করুন।");
+      const {data:found,error}=await db.from("mess_months").select("id,status").eq("month_start",b.start).maybeSingle();
+      if(error)throw error;
+      if(found){monthRecord=found;if(found.status!=="open")throw new Error("এই মাসের হিসাব বন্ধ; মিল পরিবর্তন করা যাবে না।");return found.id;}
+      const {data:created,error:createError}=await db.from("mess_months").insert({month_start:b.start,status:"open"}).select("id,status").single();
+      if(createError)throw createError;monthRecord=created;return created.id;
+    };
+    const loadMembers=async()=>{
+      const {data,error}=await db.from("members").select("id,member_code,full_name").eq("status","active").order("full_name");
+      if(error)throw error;members=data||[];memberSelect.replaceChildren();
+      const option=document.createElement("option");option.value="";option.textContent="সদস্য নির্বাচন করুন";memberSelect.append(option);
+      members.forEach(m=>{const o=document.createElement("option");o.value=m.id;o.textContent=(m.member_code?m.member_code+" — ":"")+m.full_name;memberSelect.append(o);});
+    };
+    const renderDaily=()=>{
+      const body=$("#dailyMealRows");body.replaceChildren();
+      if(!dailyEntries.length){const tr=document.createElement("tr"),td=document.createElement("td");td.colSpan=7;td.className="text-center text-muted";td.textContent="এই তারিখে কোনো মিল এন্ট্রি নেই।";tr.append(td);body.append(tr);}
+      dailyEntries.forEach(entry=>{
+        const m=members.find(x=>x.id===entry.member_id), total=Number(entry.breakfast)+Number(entry.lunch)+Number(entry.dinner), tr=document.createElement("tr");
+        [m?.full_name||"সদস্য",bn(entry.breakfast),bn(entry.lunch),bn(entry.dinner),bn(total),entry.note||"—"].forEach(v=>{const td=document.createElement("td");td.textContent=v;tr.append(td);});
+        const action=document.createElement("td"),btn=document.createElement("button");btn.type="button";btn.className="btn btn-sm btn-outline-success";btn.textContent="এডিট";btn.addEventListener("click",()=>{memberSelect.value=entry.member_id;form.elements.namedItem("breakfast").value=entry.breakfast;form.elements.namedItem("lunch").value=entry.lunch;form.elements.namedItem("dinner").value=entry.dinner;form.elements.namedItem("note").value=entry.note||"";window.scrollTo({top:0,behavior:"smooth"});});action.append(btn);tr.append(action);body.append(tr);
+      });
+      $("#dailyMealCount").textContent="এন্ট্রি: "+bn(dailyEntries.length)+" জন";
+    };
+    const loadDaily=async()=>{
+      const day=dateInput.value;if(!day)return;
+      const {data,error}=await db.from("meal_entries").select("id,member_id,meal_date,breakfast,lunch,dinner,note").eq("meal_date",day).order("created_at");
+      if(error)throw error;dailyEntries=data||[];renderDaily();
+    };
+    const loadReport=async()=>{
+      const b=bounds();if(!b)return;
+      const {data:month,error:monthError}=await db.from("mess_months").select("id,status").eq("month_start",b.start).maybeSingle();
+      if(monthError)throw monthError;monthRecord=month||null;
+      $("#mealMonthState").textContent=month?(month.status==="open"?"চলমান":"বন্ধ"):"এখনো খোলা হয়নি";
+      if(!month){
+        $("#monthMealTotal").textContent="০";$("#foodExpenseTotal").textContent=money(0);$("#mealRate").textContent=money(0);$("#monthDepositTotal").textContent=money(0);
+        $("#memberMealReport").innerHTML='<tr><td colspan="5" class="text-center text-muted">এই মাসে কোনো হিসাব নেই।</td></tr>';return;
+      }
+      const results=await Promise.all([
+        db.from("meal_entries").select("member_id,breakfast,lunch,dinner").gte("meal_date",b.start).lt("meal_date",b.next),
+        db.from("expenses").select("amount").eq("mess_month_id",month.id).eq("category","food"),
+        db.from("deposits").select("member_id,amount").eq("mess_month_id",month.id)
+      ]);
+      const failure=results.find(x=>x.error);if(failure)throw failure.error;
+      const mealRows=results[0].data||[], foodRows=results[1].data||[], depositRows=results[2].data||[];
+      const mealCount=mealRows.reduce((sum,x)=>sum+Number(x.breakfast||0)+Number(x.lunch||0)+Number(x.dinner||0),0);
+      const foodCost=foodRows.reduce((sum,x)=>sum+Number(x.amount||0),0);
+      const deposits=depositRows.reduce((sum,x)=>sum+Number(x.amount||0),0);
+      const rate=mealCount>0?foodCost/mealCount:0;
+      $("#monthMealTotal").textContent=bn(mealCount);$("#foodExpenseTotal").textContent=money(foodCost);$("#mealRate").textContent=money(rate);$("#monthDepositTotal").textContent=money(deposits);
+      const perMember=new Map();
+      mealRows.forEach(x=>{const v=perMember.get(x.member_id)||0;perMember.set(x.member_id,v+Number(x.breakfast||0)+Number(x.lunch||0)+Number(x.dinner||0));});
+      const paid=new Map();depositRows.forEach(x=>paid.set(x.member_id,(paid.get(x.member_id)||0)+Number(x.amount||0)));
+      const body=$("#memberMealReport");body.replaceChildren();
+      if(!members.length){const tr=document.createElement("tr"),td=document.createElement("td");td.colSpan=5;td.textContent="কোনো সক্রিয় সদস্য নেই।";tr.append(td);body.append(tr);return;}
+      members.forEach(m=>{
+        const count=perMember.get(m.id)||0,cost=count*rate,deposit=paid.get(m.id)||0,balance=deposit-cost,tr=document.createElement("tr");
+        [m.full_name,bn(count),money(cost),money(deposit),money(balance)].forEach((v,i)=>{const td=document.createElement("td");td.textContent=v;if(i===4){td.className=balance>=0?"text-success fw-semibold":"text-danger fw-semibold";}tr.append(td);});body.append(tr);
+      });
+    };
+    const refresh=async()=>{await loadDaily();await loadReport();};
+    $("#signOutButton").addEventListener("click",async()=>{const {error}=await db.auth.signOut();if(error)notify("লগআউট করা যায়নি: "+error.message,"danger");else window.location.replace("login.html");});
+    monthInput.addEventListener("change",async()=>{if(dateInput.value&&dateInput.value.slice(0,7)!==monthInput.value)dateInput.value=monthInput.value+"-01";try{await refresh();}catch(e){notify("হিসাব লোড হয়নি: "+e.message,"danger");}});
+    dateInput.addEventListener("change",()=>loadDaily().catch(e=>notify("দৈনিক মিল লোড হয়নি: "+e.message,"danger")));
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();const v=Object.fromEntries(new FormData(form).entries());
+      if(!dateInput.value||dateInput.value.slice(0,7)!==monthInput.value){notify("এন্ট্রির তারিখ নির্বাচিত মাসের মধ্যে হতে হবে।","warning");return;}
+      const numbers=["breakfast","lunch","dinner"].map(k=>Number(v[k]));
+      if(numbers.some(n=>!Number.isFinite(n)||n<0)){notify("মিলের সংখ্যা সঠিকভাবে দিন।","warning");return;}
+      saveButton.disabled=true;
+      try{
+        const monthId=await ensureMonth(),{data:s}=await db.auth.getSession();
+        const payload={member_id:v.member_id,meal_date:dateInput.value,breakfast:numbers[0],lunch:numbers[1],dinner:numbers[2],note:v.note.trim()||null,recorded_by:s.session.user.id};
+        const {error}=await db.from("meal_entries").upsert(payload,{onConflict:"member_id,meal_date"});
+        if(error)throw error;notify("দৈনিক মিল সংরক্ষণ হয়েছে।","success");form.reset();await refresh();
+      }catch(e){notify("মিল সংরক্ষণ করা যায়নি: "+e.message,"danger");}
+      finally{saveButton.disabled=false;}
+    });
+    (async()=>{
+      const {data:s}=await db.auth.getSession();if(!s.session){window.location.replace("login.html");return;}
+      const {data:p,error}=await db.from("profiles").select("role,is_active").eq("id",s.session.user.id).maybeSingle();
+      if(error||!p||!p.is_active||!["admin","manager"].includes(p.role)){notify("এই পৃষ্ঠা শুধু Admin ও Manager ব্যবহার করতে পারবেন।","danger");setTimeout(()=>window.location.replace("dashboard.html"),1800);return;}
+      const today=new Date(),month=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0");
+      monthInput.value=month;dateInput.value=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+      await loadMembers();await refresh();
+    })().catch(e=>notify("মিল ব্যবস্থাপনা চালু হয়নি: "+e.message,"danger"));
+  }
+
 })();
